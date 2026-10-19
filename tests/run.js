@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('assert'), d=require('../app/diagnostics.js');
+const empty=d.readBasic({}); assert(/Unavailable/.test(empty.model));
+const denied={tizen:{systeminfo:{getTotalMemory(){throw {name:'SecurityError'}}, getAvailableMemory(){throw {name:'SecurityError'}}}}};
+assert(/permission denied/.test(d.readBasic(denied).memory));
+assert.equal(d.bytes(1073741824),'1.00 GiB'); assert(/Unavailable/.test(d.bytes(-1)));
+assert(/Unavailable/.test(d.storageText({units:[{type:'INTERNAL',capacity:2,availableCapacity:3}]})));
+const stats=d.summarize([10,20,30,60]); assert.equal(stats.medianMs,25);assert.equal(stats.over50Ms,1);assert.equal(stats.p95Ms,60);
+let timers={},next=0;const root={setTimeout(fn){timers[++next]=fn;return next},clearTimeout(id){delete timers[id]}};
+let storage;d.readStorage(root,x=>storage=x);assert(/Unavailable/.test(storage));assert.equal(Object.keys(timers).length,0);
+root.tizen={systeminfo:{getPropertyValue(p,ok){ok({units:[{type:'INTERNAL',capacity:1073741824,availableCapacity:536870912}]})}}};
+d.readStorage(root,x=>storage=x);assert(/0.50 GiB free/.test(storage));
+let queue=[],stamp=0,out;root.document={hidden:false};root.requestAnimationFrame=fn=>(queue.push(fn),queue.length);root.cancelAnimationFrame=()=>{};
+d.measure(root,()=>{},x=>out=x);while(!out && queue.length){stamp+=20;queue.shift()(stamp)}assert(out.ok);assert.equal(out.result.callbacksPerSecond,50);
+root.document.hidden=true;out=null;d.measure(root,()=>{},x=>out=x);assert(!out.ok);
+console.log('PASS: unavailable APIs, denied permissions, byte validation, storage bounds, statistics, frame timing, hidden-page handling');
