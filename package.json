@@ -1,18 +1,19 @@
 {
-  "name": "tizenbrew-tv-diagnostics",
-  "version": "0.2.0",
+  "name": "tizenbrew-tv-service-probe",
+  "version": "0.3.0",
   "private": true,
-  "description": "Experimental read-only TV API checks and this page's frame timing.",
+  "description": "Experimental one-shot read-only OS snapshot using a temporary TV-loopback endpoint",
   "packageType": "app",
-  "appName": "TV Diagnostics (read-only)",
+  "appName": "Experimental one-shot TV snapshot",
   "appPath": "app/index.html",
+  "serviceFile": "service.js",
   "keys": [],
   "files": [
     "app",
+    "service.js",
     "README.md"
   ],
   "scripts": {
-    "test": "node tests/run.js && node tests/dom.js",
-    "test:ui": "node tests/ui.js"
+    "test": "node tests/run.js && node tests/ui.js"
   }
 }

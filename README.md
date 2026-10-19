@@ -1,37 +1,39 @@
-# TV Diagnostics for TizenBrew
+# Experimental TV service snapshot, development only
 
-Experimental, read-only application module. It does not optimize the TV or grant remote access.
+**Experimental hardware test. This version was approved for a one-time test by the device owner. Hardware compatibility has not yet been verified.**
 
-## What it does
-- Attempts to display model, firmware, platform version, memory and internal storage using APIs already available to the host.
-- Displays browser-reported user agent, viewport, screen/DPR, logical-processor hint, context, feature presence and this document's navigation timing in a separate Browser details view.
-- Distinguishes missing namespaces/methods from observed permission errors; it cannot determine why a host omitted an API.
-- Runs an optional five-second animation callback timing check of this page only.
-- Displays unsupported or denied APIs as Unavailable. This is expected under some TizenBrew configurations.
+This standalone prototype leaves the existing v0.2.0 diagnostic module unchanged. It adds a NEW HTTP endpoint, explicitly bound to TV loopback 127.0.0.1:18763. It does not use a preexisting TizenBrew module message channel. It is not an optimizer and gives no assistant remote access.
 
-## Privacy and limits
-No service module, credentials, telemetry, network requests, persistent storage, settings changes, app management, or root access. Results stay on screen. TizenBrew itself downloads the code through its existing GitHub/jsDelivr mechanism; that delivery and the host's own behavior are outside this module.
+## Data and scope
 
-This module does not measure Smart Hub or another app's frame rate, input-to-photon latency, video quality, or overall TV speed. It cannot identify a bottleneck from frame timing alone. No performance improvement or complete security guarantee is claimed.
+One fixed GET /read-only-snapshot reads only Node os.totalmem(), os.freemem(), os.uptime(), and os.loadavg(). These return OS-reported total/free bytes, uptime seconds, and 1/5/15-minute system load averages. Load averages are NOT CPU percentages, per-app measurements, or a normalized performance score. No Tizen APIs are called in this first prototype; native callback and cancellation behavior remains unverified. No arbitrary command, query parameter, URL, path, code or API name is accepted. No identifiers, inventory, files, environment, credentials, raw errors, persistent results, or logs are read or saved.
 
-## Installation
-Use TizenBrew Module Manager → Add GitHub Module with the reviewed repository and pinned revision supplied alongside this project. Do not substitute an unreviewed repository. An ordinary browser preview lacks Samsung TV APIs. Version 0.1.0 launched on the television described below; version 0.2.0 still needs a hardware check.
+## Lifecycle
 
-## Controls and removal
-Browser details toggles the runtime view; TV summary returns to the timing check. Refresh updates both snapshots. Arrows select buttons, Enter activates, Back attempts previous-page navigation. Use the TV Home button if needed. To undo, remove only this module in TizenBrew Module Manager; do not reset the television or uninstall TizenBrew.
+Loading service.js starts the endpoint, but collects no snapshot until the single UI button is activated. A single 55-second timer closes the listener and destroys its tracked sockets. The first accepted GET consumes the service; response finish immediately stops accepting connections and allows a maximum 250 ms graceful drain before destroying remaining sockets. The original 55-second deadline stays active and can cut that drain short. Response abort/error stops immediately. A delayed listening event after expiry or during drain closes the listener again. Connections idle for two seconds are destroyed, and at most eight accepted connections are retained. Port conflicts fail closed without retries. Errors do not restart the timer. No polling or autostart setting is added. The host itself fetches module assets over the network as it already does; this code makes no external requests.
 
-## Testing
-Run `npm test` for deterministic helper tests, and `npm run test:ui` for a local browser test using an already available Playwright installation. Browser tests are not proof of television behavior.
+The page makes at most one request, only on Read once, with a 10-second deadline. Stop waiting, navigation/pagehide, successful completion and errors clear its timer and abort its XHR. Stop waiting does not stop the backend early; it expires on its original deadline.
 
-## References
+**The 55-second bound relies on a responsive host event loop.** Node's OS methods are synchronous native calls; JavaScript cannot preempt a hung native call or event loop. A hard independent wall-clock kill would require a separate supervisor/process and is deliberately not attempted. Do not promise unconditional 55-second shutdown on broken runtimes. The host may retain an inert VM and service status after all this module's sockets/timers are gone. Removing the module does not forcibly unload that VM. Reopening the module may therefore NOT restart an expired endpoint. The inspected host only restarts absent or crashed service entries. There is no verified Android-only, module-specific restart procedure. Do not assume reopening the page restarts an expired service.
+
+## Transport security
+
+Requires Host exactly 127.0.0.1:18763 and Origin exactly http://127.0.0.1:8081 or http://localhost:8081. Those are TizenBrew's expected module-host origins. It rejects missing/null/other origins, unexpected methods and paths, request bodies and queries. CORS allows only the validated requesting origin; it does not use credentials or wildcard origins. It serves no HTML or executable content. Binding loopback prevents ordinary LAN connections.
+
+Origin/Host checks are browser request restrictions, NOT authentication. Another local process can forge headers, and another module on the same permitted host origin can read or consume the one snapshot while available. Such callers can also cause denial of service. No new secret/token or persistent permission is created. Older engine CORS behavior, a different host origin, unavailable OS APIs, or a port conflict can prevent success. Rejecting OPTIONS means any unexpected preflight fails closed.
+
+Response finish means bytes handed to the operating system, not proof that the page received them. The endpoint stops accepting immediately at that point and allows a bounded 250 ms socket drain, subject to the original deadline. The UI reports success only after parsing a valid response. Partial transfer or browser restrictions can yield no result even when the endpoint has consumed its one attempt. No automatic retry is made.
+
+## Validation
+
+Run npm test. Tests execute service.js only inside a VM with a mocked HTTP server and mocked OS functions; no listening socket is opened. They cover allowlists, invalid requests, a second request, fixed expiry, port conflict, idle sockets, connection limit, response cleanup and sanitized missing/error/invalid data. UI mocks cover no auto-request/repeated click, timeout, cancellation, navigation, valid and invalid response cleanup. Node syntax checks also pass on the available Node 24 runtime.
+
+No Node 4.4.3 runtime, real browser, actual HTTP transfer, Samsung firmware, or hardware compatibility test has been run. Source uses ES5 syntax and avoids newer runtime features. A native method hanging forever cannot be safely simulated on a single synchronous test event loop; that case is explicitly outside the timer guarantee. No Tizen callback timeout test applies because this revision invokes no Tizen APIs.
+
+## Test scope and sources
+
+This release is for a single owner-approved test on a Samsung UN65TU7000FXZA. It is not a remote-access service or optimizer. Do not install it on other devices without reviewing its scope and limitations. Older diagnostic versions remain available at their pinned revisions.
+
 - https://github.com/reisxd/TizenBrew/blob/main/docs/MODULES.md
-- https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html
-- https://developer.samsung.com/smarttv/develop/api-references/tizen-web-device-api-references/systeminfo-api.html
-
-## Validation status
-- Version 0.1.0 was verified on a Samsung UN65TU7000FXZA (2020), firmware T-KSU2EAKUC-2301.1, on 2026-10-19 at 01:18 UTC. The UI and five-second check worked; neither `tizen.systeminfo` nor `webapis.productinfo` was exposed in the hosted module.
-- That single page-only sample reported 60.0 callbacks/second, median 16.7 ms, p95 16.8 ms, longest 16.8 ms, and 301 intervals over 5.02 seconds. This is not a TV-wide performance or panel-refresh measurement.
-- Version 0.2.0: helper tests, mock-DOM remote-navigation tests and JavaScript syntax checks pass. Real-browser rendering is blocked in this build environment: Chromium exits with `socket() failed: Operation not permitted`. Version 0.2.0 has not yet been tested on the television.
-
-## Interpreting browser details
-The reported user agent may be overridden by the host and does not verify actual engine, operating-system or firmware versions. Screen size and device-pixel ratio describe browser presentation, not necessarily native panel resolution. Hardware concurrency is a browser-reported logical-processor hint, not an inventory of physical CPU cores. Feature presence does not prove functionality or acceleration. Navigation timing describes this document only and may be pending until Refresh is selected after page load. No URLs, resource names, host addresses, device identifiers, account information or raw API errors are collected. The page checks only the scheme and secure-context flag, with no requests for access and no host bridges or injected vendor scripts.
+- https://github.com/reisxd/TizenBrew/blob/main/tizenbrew-app/TizenBrew/service-nextgen/service/utils/serviceLauncher.js
+- https://github.com/reisxd/TizenBrew/blob/main/tizenbrew-app/TizenBrew/service-nextgen/service/index.js

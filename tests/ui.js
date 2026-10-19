@@ -1,37 +1,10 @@
 'use strict';
-const {chromium}=require('playwright'), http=require('http'), fs=require('fs'), path=require('path'), assert=require('assert');
-(async()=>{
-  const dir=path.resolve(__dirname,'../app');
-  const server=http.createServer((q,r)=>{
-    const f=path.join(dir,q.url==='/'?'index.html':q.url);
-    if(!f.startsWith(dir+'/')){r.writeHead(403).end();return;}
-    try{r.setHeader('Content-Type',f.endsWith('.js')?'text/javascript':f.endsWith('.css')?'text/css':'text/html');r.end(fs.readFileSync(f));}
-    catch(e){r.writeHead(404).end();}
-  });
-  await new Promise(ok=>server.listen(0,'127.0.0.1',ok));let browser;
-  try{
-    browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',args:['--no-sandbox']});
-    const page=await browser.newPage({viewport:{width:1920,height:1080}}), errors=[],requests=[];
-    page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
-    await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForTimeout(100);
-    assert((await page.locator('#model').innerText()).includes('Unavailable'));
-    await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'measure');
-    await page.keyboard.press('Enter');await page.waitForTimeout(5500);
-    assert((await page.locator('#timing').innerText()).includes('This page only'));
-    assert(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight));
-    await page.locator('#view').click();
-    assert(await page.locator('#runtime-view').isVisible());assert(await page.locator('#measure').isDisabled());
-    assert((await page.locator('#useragent').innerText()).length>0);
-    assert((await page.locator('#apiexplanation').innerText()).includes('not evidence of denied permission'));
-    await page.locator('#refresh').click();assert(await page.locator('#measure').isDisabled());
-    await page.screenshot({path:path.resolve(__dirname,'../preview-runtime.png')});
-    assert(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight));
-    await page.locator('#view').click();await page.locator('#measure').click();await page.locator('#view').click();
-    assert(await page.locator('#stop').isDisabled());assert(await page.locator('#measure').isDisabled());
-    await page.locator('#view').click();assert((await page.locator('#timing').innerText()).includes('view changed'));
-    assert.equal(errors.length,0);assert(requests.every(u=>u.startsWith('http://127.0.0.1:')));
-    assert.equal(await page.evaluate(()=>localStorage.length),0);
-    await page.screenshot({path:path.resolve(__dirname,'../preview.png')});
-    console.log('PASS: 1080p views, remote navigation, frame test, interrupted flow, no runtime errors/external requests/storage writes');
-  }finally{if(browser)await browser.close();server.close();}
-})().catch(e=>{console.error(e);process.exitCode=1;});
+var assert=require('assert'),vm=require('vm'),fs=require('fs');
+var source=fs.readFileSync(__dirname+'/../app/ui.js','utf8');
+function setup(){var nodes={},tasks=[],requests=[],events={}; ['read','stop','back','status','result'].forEach(function(id){nodes[id]={disabled:false,textContent:'',focus:function(){document.activeElement=this;}};});var document={getElementById:function(id){return nodes[id];},querySelectorAll:function(){return [nodes.read,nodes.stop,nodes.back];},addEventListener:function(k,v){events[k]=v;}};function XHR(){requests.push(this);this.abort=function(){this.aborted=true;};this.open=function(method,url){this.method=method;this.url=url;};this.send=function(){this.sent=true;};}vm.runInNewContext(source,{document:document,window:{history:{back:function(){}},addEventListener:function(k,v){events[k]=v;}},XMLHttpRequest:XHR,setTimeout:function(fn,ms){var t={fn:fn,ms:ms,active:true};tasks.push(t);return t;},clearTimeout:function(t){t.active=false;}});return {nodes:nodes,tasks:tasks,requests:requests,events:events};}
+var h=setup();assert.strictEqual(h.requests.length,0);h.nodes.read.onclick();h.nodes.read.onclick();assert.strictEqual(h.requests.length,1);assert.strictEqual(h.tasks[0].ms,10000);h.tasks[0].fn();assert(h.requests[0].aborted);assert(!h.tasks[0].active);assert.strictEqual(h.requests[0].onload,null);
+h=setup();h.nodes.read.onclick();h.nodes.stop.onclick();assert(h.requests[0].aborted);assert(!h.tasks[0].active);
+h=setup();h.nodes.read.onclick();h.events.pagehide();assert(h.requests[0].aborted);assert(!h.tasks[0].active);
+h=setup();h.nodes.read.onclick();var x=h.requests[0];x.status=200;x.responseText=JSON.stringify({schema:'tv-readonly-snapshot-v1',totalMemoryBytes:{status:'available',value:104857600},freeMemoryBytes:{status:'available',value:40},uptimeSeconds:{status:'available',value:2},loadAverage1_5_15Minutes:{status:'available',value:[1,2,3]}});x.onload();assert(h.nodes.result.textContent.indexOf('100.00 MiB')>=0);assert(h.nodes.status.textContent.indexOf('Snapshot received')>=0);assert(!h.tasks[0].active);assert(x.aborted);
+h=setup();h.nodes.read.onclick();x=h.requests[0];x.status=200;x.responseText='not json';x.onload();assert(h.nodes.status.textContent.indexOf('No valid')>=0);assert(!h.tasks[0].active);
+console.log('5 deterministic UI flows passed: no auto request/repeat, deadline, stop, pagehide, valid and invalid response cleanup.');
