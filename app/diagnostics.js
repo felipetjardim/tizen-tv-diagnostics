@@ -59,6 +59,80 @@
             memory: memory
         };
     }
+    // Read individual properties defensively: a host can expose a namespace but deny a getter.
+    function property(object, key) {
+        var value;
+        try {
+            value = object ? object[key] : undefined;
+            if (typeof value === 'undefined' || value === null) {
+                return { ok: false, reason: 'not exposed' };
+            }
+            return { ok: true, value: value };
+        } catch (error) { return { ok: false, reason: errorReason(error) }; }
+    }
+    function methodStatus(api, methods) {
+        var values = [], i, result;
+        if (!api.value) { return api.reason; }
+        for (i = 0; i < methods.length; i += 1) {
+            result = property(api.value, methods[i]);
+            values.push(methods[i] + ': ' + (!result.ok ? result.reason :
+                (typeof result.value === 'function' ? 'exposed' : 'not callable')));
+        }
+        return values.join('; ');
+    }
+    function numberText(result, suffix) {
+        return result.ok && typeof result.value === 'number' && isFinite(result.value) && result.value >= 0 ?
+            String(result.value) + (suffix || '') : unavailable(result.reason || 'no valid value');
+    }
+    function pair(object, first, second) {
+        return numberText(property(object, first)) + ' × ' + numberText(property(object, second));
+    }
+    function readRuntime(root) {
+        var nav = namespace(root, ['navigator']), screen = namespace(root, ['screen']);
+        var perf = namespace(root, ['performance']), doc = namespace(root, ['document']);
+        var system = namespace(root, ['tizen', 'systeminfo']), product = namespace(root, ['webapis', 'productinfo']);
+        var ua = property(nav.value, 'userAgent'), protocol = namespace(root, ['location', 'protocol']);
+        var secure = property(root, 'isSecureContext'), visibility = property(doc.value, 'visibilityState');
+        var cpu = property(nav.value, 'hardwareConcurrency'), features = [], i, feature, result;
+        var names = ['requestAnimationFrame', 'PerformanceObserver', 'Worker', 'WebAssembly', 'WebGLRenderingContext', 'MediaSource'];
+        var timing = namespace(root, ['performance', 'timing']), start, interactive, complete, pageTiming;
+        var age = invoke(perf, 'now');
+        if (age.ok && typeof age.value === 'number' && isFinite(age.value) && age.value >= 0) { age.value = Math.round(age.value / 1000); }
+        else if (age.ok) { age = { ok: false, reason: 'no valid value' }; }
+        for (i = 0; i < names.length; i += 1) {
+            feature = names[i]; result = property(root, feature);
+            features.push(feature + ': ' + (result.ok ? 'exposed' : result.reason));
+        }
+        start = property(timing.value, 'navigationStart');
+        interactive = property(timing.value, 'domContentLoadedEventEnd');
+        complete = property(timing.value, 'loadEventEnd');
+        function elapsed(end) {
+            if (!start.ok || !end.ok) { return unavailable((!timing.value && timing.reason) || 'timing not exposed'); }
+            if (typeof start.value !== 'number' || typeof end.value !== 'number' || !isFinite(start.value) || !isFinite(end.value)) {
+                return unavailable('no valid value');
+            }
+            if (start.value <= 0 || end.value <= 0) { return 'Pending; refresh after page load'; }
+            return end.value >= start.value ? String(Math.round(end.value - start.value)) + ' ms' : unavailable('inconsistent timing');
+        }
+        pageTiming = 'DOM ready: ' + elapsed(interactive) + '; load complete: ' + elapsed(complete);
+        return {
+            useragent: ua.ok && typeof ua.value === 'string' ? ua.value.replace(/[\x00-\x1f\x7f]/g, '').replace(/(?:\d{1,3}\.){3}\d{1,3}/g, '[address omitted]').slice(0, 500) : unavailable(ua.reason || 'no valid value'),
+            viewport: pair(root, 'innerWidth', 'innerHeight') + ' CSS px',
+            screeninfo: pair(screen.value, 'width', 'height') + ' reported CSS px; DPR: ' + numberText(property(root, 'devicePixelRatio')),
+            concurrency: cpu.ok && typeof cpu.value === 'number' && isFinite(cpu.value) && cpu.value > 0 && Math.floor(cpu.value) === cpu.value ?
+                String(cpu.value) + ' logical processors reported to this page (not a physical core count)' : unavailable(cpu.reason || 'no valid value'),
+            context: (protocol.value && /^(https?:|file:)$/.test(protocol.value) ? protocol.value : 'Other/unknown scheme') +
+                '; secure context: ' + (secure.ok && typeof secure.value === 'boolean' ? (secure.value ? 'yes' : 'no') : 'unknown') +
+                '; visibility: ' + (visibility.ok && /^(visible|hidden|prerender|unloaded)$/.test(visibility.value) ? visibility.value : 'unknown'),
+            features: features.join('; '),
+            pagetiming: pageTiming + '; page age: ' + numberText(age, ' s'),
+            systemmethods: methodStatus(system, ['getCapability', 'getTotalMemory', 'getAvailableMemory', 'getPropertyValue']),
+            productmethods: methodStatus(product, ['getModel', 'getFirmware']),
+            apiexplanation: !system.value && !product.value && system.reason === 'API not exposed' && product.reason === 'API not exposed' ?
+                'Neither TV namespace is exposed to this page. This is not evidence of denied permission. Browser readings below still work.' :
+                'Exposed means present, not guaranteed usable. Permission denied is shown only after a security/permission error. Missing methods and API errors are separate.'
+        };
+    }
     function storageText(value) {
         var units, i, unit;
         try {
@@ -151,5 +225,5 @@
         } catch (error) { finish(errorReason(error)); }
         return function (reason) { finish(reason || 'stopped; measurement discarded'); };
     }
-    return { readBasic: readBasic, readStorage: readStorage, measure: measure, summarize: summarize, storageText: storageText, bytes: bytes };
+    return { readBasic: readBasic, readRuntime: readRuntime, readStorage: readStorage, measure: measure, summarize: summarize, storageText: storageText, bytes: bytes };
 }));

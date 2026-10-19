@@ -26,3 +26,9 @@ dd { margin: 0; overflow-wrap: break-word; word-wrap: break-word; }
 footer { margin-top: 0.9rem; font-size: 0.73rem; }
 @media (max-width: 1366px), (max-height: 800px) { html { font-size: 20px; } main { padding-top: 2.5vh; } }
 @media (max-width: 800px) { .columns { display: block; } .panel { width: 100%; } .panel + .panel { margin: 0.8rem 0 0; } html { font-size: 18px; } }
+
+[hidden] { display: none !important; }
+.api-list { display: block; margin-top: 0.6rem; }
+.api-list dt { font-weight: bold; border: 0; padding-bottom: 0; }
+.api-list dd { font-size: 0.77rem; }
+#useragent { font-size: 0.73rem; }

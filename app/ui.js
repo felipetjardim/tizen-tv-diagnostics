@@ -1,7 +1,8 @@
 (function (root, document) {
     'use strict';
     var core = root.TVDiagnostics;
-    var ids = ['refresh', 'measure', 'stop', 'back'];
+    var ids = ['view', 'refresh', 'measure', 'stop', 'back'];
+    var showRuntime = false;
     var stopMeasurement = null, cancelStorage = null, revision = 0, navigating = false;
     function node(id) { return document.getElementById(id); }
     function text(id, value) { node(id).textContent = value; }
@@ -16,6 +17,8 @@
         revision += 1;
         current = revision;
         data = core.readBasic(root);
+        for (key in data) { if (Object.prototype.hasOwnProperty.call(data, key)) { text(key, data[key]); } }
+        data = core.readRuntime(root);
         for (key in data) { if (Object.prototype.hasOwnProperty.call(data, key)) { text(key, data[key]); } }
         text('storage', 'Checking...');
         text('status', 'Read-only snapshot. No settings changed.');
@@ -77,6 +80,15 @@
             if (!node(ids[next]).disabled) { node(ids[next]).focus(); return; }
         }
     }
+    node('view').addEventListener('click', function () {
+        stop('view changed; measurement discarded');
+        showRuntime = !showRuntime;
+        node('summary-view').hidden = showRuntime;
+        node('runtime-view').hidden = !showRuntime;
+        node('measure').disabled = showRuntime;
+        text('view', showRuntime ? 'TV summary' : 'Browser details');
+        node('view').focus();
+    });
     node('refresh').addEventListener('click', refresh);
     node('measure').addEventListener('click', start);
     node('stop').addEventListener('click', function () { stop(); });
